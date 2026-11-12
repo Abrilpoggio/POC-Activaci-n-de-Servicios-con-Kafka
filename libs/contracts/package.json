@@ -1,0 +1,16 @@
+{
+  "name": "@poc/contracts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Contratos de eventos compartidos: sobre comun, tipos y nombres de topics",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}

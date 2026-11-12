@@ -1,0 +1,20 @@
+{
+  "name": "@poc/kafka-toolkit",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Logistica compartida de Kafka: idempotencia, reintentos, DLQ y outbox transaccional",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@poc/contracts": "*",
+    "kafkajs": "^2.2.4",
+    "mongodb": "^6.16.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}

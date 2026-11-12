@@ -1,0 +1,26 @@
+{
+  "name": "activation-poc",
+  "version": "1.0.0",
+  "private": true,
+  "description": "POC Activacion de Servicios con Kafka - Sistemas Distribuidos 2026",
+  "workspaces": [
+    "libs/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build:libs && npm run build:apps",
+    "build:libs": "npm run build -w @poc/contracts && npm run build -w @poc/kafka-toolkit",
+    "build:apps": "npm run build -w @poc/activation-api -w @poc/billing-service -w @poc/provisioning-service -w @poc/notification-service -w @poc/crm-analytics-service -w @poc/loyalty-service",
+    "build:ui": "npm run build -w @poc/demo-ui",
+    "start:api": "npm run start -w @poc/activation-api",
+    "start:billing": "npm run start -w @poc/billing-service",
+    "start:provisioning": "npm run start -w @poc/provisioning-service",
+    "start:notification": "npm run start -w @poc/notification-service",
+    "start:crm": "npm run start -w @poc/crm-analytics-service",
+    "dev:ui": "npm run dev -w @poc/demo-ui"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.8.3"
+  }
+}

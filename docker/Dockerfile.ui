@@ -1,0 +1,24 @@
+# Imagen de la Demo UI (React + Vite): build estatico servido por nginx.
+FROM node:22-alpine AS build
+WORKDIR /repo
+
+COPY package.json package-lock.json ./
+COPY libs/contracts/package.json libs/contracts/package.json
+COPY libs/kafka-toolkit/package.json libs/kafka-toolkit/package.json
+COPY apps/activation-api/package.json apps/activation-api/package.json
+COPY apps/billing-service/package.json apps/billing-service/package.json
+COPY apps/provisioning-service/package.json apps/provisioning-service/package.json
+COPY apps/notification-service/package.json apps/notification-service/package.json
+COPY apps/crm-analytics-service/package.json apps/crm-analytics-service/package.json
+COPY apps/loyalty-service/package.json apps/loyalty-service/package.json
+COPY apps/demo-ui/package.json apps/demo-ui/package.json
+RUN npm ci --no-audit --no-fund
+
+COPY tsconfig.base.json ./
+COPY apps/demo-ui ./apps/demo-ui
+RUN npm run build -w @poc/demo-ui
+
+FROM nginx:1.27-alpine
+COPY --from=build /repo/apps/demo-ui/dist /usr/share/nginx/html
+COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80

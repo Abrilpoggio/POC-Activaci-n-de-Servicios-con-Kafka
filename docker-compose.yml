@@ -1,0 +1,207 @@
+name: activation-poc
+
+# ------------------------------------------------------------------
+# POC Activacion de Servicios con Kafka
+# Infraestructura + servicios + UI. Un solo comando: docker compose up
+# ------------------------------------------------------------------
+
+x-app-base: &app-base
+  build:
+    context: .
+    dockerfile: docker/Dockerfile.app
+  depends_on:
+    kafka-init:
+      condition: service_completed_successfully
+    mongo-init:
+      condition: service_completed_successfully
+  restart: "no"
+
+x-app-env: &app-env
+  KAFKA_BROKERS: kafka:29092
+  MONGO_URI: "mongodb://mongo:27017/?replicaSet=rs0&directConnection=true"
+  TZ: America/Argentina/Buenos_Aires
+
+services:
+  # ---------------- Kafka (KRaft, 1 broker) ----------------
+  kafka:
+    image: apache/kafka:3.9.0
+    hostname: kafka
+    ports:
+      - "9092:9092"
+    environment:
+      CLUSTER_ID: "MkU3OEVBNzU3QkJEMzVDNA"
+      KAFKA_CLUSTER_ID: "MkU3OEVBNzU3QkJEMzVDNA"
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: CONTROLLER://:9093,INTERNAL://:29092,EXTERNAL://:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 24
+      start_period: 20s
+
+  # Crea los topics de negocio + sus DLQ con 3 particiones y retencion de 7 dias.
+  kafka-init:
+    image: apache/kafka:3.9.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./docker/create-topics.sh:/opt/kafka/create-topics.sh:ro
+    environment:
+      KAFKA_BOOTSTRAP: kafka:29092
+    entrypoint: ["bash", "/opt/kafka/create-topics.sh"]
+
+  kafka-ui:
+    image: kafbat/kafka-ui:latest
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # ---------------- Mongo (replica set de 1 nodo) ----------------
+  mongo:
+    image: mongo:7.0
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep -q 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 10s
+
+  # Inicia el replica set y espera a que haya PRIMARY (las transacciones lo necesitan).
+  mongo-init:
+    image: mongo:7.0
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: "no"
+    entrypoint:
+      - mongosh
+      - --host
+      - mongo:27017
+      - --quiet
+      - --eval
+      - |
+        try { rs.status(); } catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongo:27017'}]}); }
+        for (let i = 0; i < 60; i++) {
+          try { if (rs.status().myState === 1) { quit(0); } } catch (e) {}
+          sleep(500);
+        }
+        quit(1);
+
+  # ---------------- Email simulado ----------------
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+
+  # ---------------- Servicios NestJS ----------------
+  activation-api:
+    <<: *app-base
+    command: node apps/activation-api/dist/main.js
+    environment:
+      <<: *app-env
+      PORT: "3000"
+      KAFKA_CLIENT_ID: activation-api
+      KAFKA_GROUP_ID: activation-api
+      MONGO_DB: activation_api
+    ports:
+      - "3000:3000"
+
+  billing-service:
+    <<: *app-base
+    command: node apps/billing-service/dist/main.js
+    environment:
+      <<: *app-env
+      KAFKA_CLIENT_ID: billing-svc
+      KAFKA_GROUP_ID: billing-svc
+      MONGO_DB: billing
+
+  provisioning-service:
+    <<: *app-base
+    command: node apps/provisioning-service/dist/main.js
+    environment:
+      <<: *app-env
+      KAFKA_CLIENT_ID: provisioning-svc
+      KAFKA_GROUP_ID: provisioning-svc
+      MONGO_DB: provisioning
+
+  notification-service:
+    <<: *app-base
+    command: node apps/notification-service/dist/main.js
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      mongo-init:
+        condition: service_completed_successfully
+      mailhog:
+        condition: service_started
+    environment:
+      <<: *app-env
+      KAFKA_CLIENT_ID: notification-svc
+      KAFKA_GROUP_ID: notification-svc
+      MONGO_DB: notification
+      SMTP_HOST: mailhog
+      SMTP_PORT: "1025"
+
+  crm-analytics-service:
+    <<: *app-base
+    command: node apps/crm-analytics-service/dist/main.js
+    environment:
+      <<: *app-env
+      KAFKA_CLIENT_ID: crm-analytics
+      KAFKA_GROUP_ID: crm-analytics
+      MONGO_DB: crm_analytics
+
+  # Escenario 5: docker compose --profile loyalty up -d loyalty-service
+  loyalty-service:
+    <<: *app-base
+    profiles: ["loyalty"]
+    command: node apps/loyalty-service/dist/main.js
+    environment:
+      <<: *app-env
+      KAFKA_CLIENT_ID: loyalty-svc
+      KAFKA_GROUP_ID: loyalty-svc
+      MONGO_DB: loyalty
+
+  # ---------------- Demo UI ----------------
+  demo-ui:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ui
+    ports:
+      - "5173:80"
+    depends_on:
+      activation-api:
+        condition: service_started
+
+volumes:
+  kafka-data:
+  mongo-data:

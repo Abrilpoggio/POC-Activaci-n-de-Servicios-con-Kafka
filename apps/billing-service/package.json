@@ -1,0 +1,24 @@
+{
+  "name": "@poc/billing-service",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "start:dev": "tsc -p tsconfig.json && node dist/main.js"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.0",
+    "@nestjs/core": "^11.1.0",
+    "@nestjs/microservices": "^11.1.0",
+    "@nestjs/platform-express": "^11.1.0",
+    "@poc/contracts": "*",
+    "@poc/kafka-toolkit": "*",
+    "mongodb": "^6.16.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}
